@@ -79,6 +79,9 @@ const hasModelCapabilities = (model: ServerProvider["models"][number]): boolean 
   (model.capabilities?.optionDescriptors?.length ?? 0) > 0;
 
 const shouldRetainMissingProviderModels = (provider: ServerProvider): boolean => {
+  if (provider.driver === ProviderDriverKind.make("acp")) {
+    return provider.enabled && provider.installed && provider.status !== "ready";
+  }
   if (provider.driver !== ProviderDriverKind.make("opencode")) {
     return true;
   }

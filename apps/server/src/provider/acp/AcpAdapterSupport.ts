@@ -60,9 +60,9 @@ export function selectAcpPermissionOptionId(
   request: Pick<EffectAcpSchema.RequestPermissionRequest, "options">,
   decision: ProviderApprovalDecision,
 ): string | undefined {
-  const kinds = ACP_PERMISSION_KINDS_BY_DECISION[decision];
-  return (
-    request.options.find((option) => kinds.some((kind) => kind === option.kind))?.optionId.trim() ||
-    undefined
-  );
+  for (const kind of ACP_PERMISSION_KINDS_BY_DECISION[decision]) {
+    const optionId = request.options.find((option) => option.kind === kind)?.optionId.trim();
+    if (optionId) return optionId;
+  }
+  return undefined;
 }

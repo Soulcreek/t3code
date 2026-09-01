@@ -205,6 +205,8 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
       const adapter = yield* makeTestAcpAdapter({
         ...process.env,
         T3_ACP_REQUEST_LOG_PATH: requestLogPath,
+        T3_ACP_EMIT_TOOL_CALLS: "1",
+        T3_ACP_ALLOW_ALWAYS_OPTION_ID: "agent-session-permission",
       });
       const threadId = ThreadId.make("standard-acp-thread");
 
@@ -221,6 +223,10 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
       yield* adapter.stopSession(threadId);
 
       const requests = yield* Effect.promise(() => readJsonLines(requestLogPath));
+      assert.deepInclude(
+        requests.map((request) => request.result),
+        { outcome: { outcome: "selected", optionId: "agent-session-permission" } },
+      );
       const configWrites = requests.flatMap((request) =>
         request.method === "session/set_config_option"
           ? [request.params as { configId: string; value: unknown }]
