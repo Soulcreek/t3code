@@ -1358,7 +1358,7 @@ index e5043320700b12f34f4c0babbc341f85ca8135c1..2ce63830a28636b21937a0741fd0e613
       * Number of columns to render items in.
       * @default 1
 diff --git a/reanimated.js b/reanimated.js
-index f1265fad74189591b5aae86cf2e3a31f9c0fdb02..59e218cb79f56c34995fb86c5de5a71ff8ce9f4d 100644
+index f1265fad74189591b5aae86cf2e3a31f9c0fdb02..9c5f560320ab47f5eeb73f44fbdcf332ba831558 100644
 --- a/reanimated.js
 +++ b/reanimated.js
 @@ -115,8 +115,10 @@ var ReanimatedPositionView = typedMemo(function ReanimatedPositionViewComponent(
@@ -1404,7 +1404,7 @@ index f1265fad74189591b5aae86cf2e3a31f9c0fdb02..59e218cb79f56c34995fb86c5de5a71f
        ref: refView,
        style: viewStyle,
        ...rest
-@@ -141,6 +162,96 @@ var ReanimatedPositionView = typedMemo(function ReanimatedPositionViewComponent(
+@@ -141,6 +162,93 @@ var ReanimatedPositionView = typedMemo(function ReanimatedPositionViewComponent(
      children
    );
  });
@@ -1418,12 +1418,12 @@ index f1265fad74189591b5aae86cf2e3a31f9c0fdb02..59e218cb79f56c34995fb86c5de5a71f
 +  const previousEpochRef = React__namespace.useRef(ctx.state.contentSizeAnimationEpoch || 0);
 +  const animationRunRef = React__namespace.useRef(0);
 +  const isAnimatingRef = React__namespace.useRef(false);
-+  const [isAnimating, setIsAnimating] = React__namespace.useState(false);
 +  const transition = props.layoutTransition;
 +  const canAnimate = !!transition && typeof transition.getAnimationAndConfig === "function";
 +  const renderEpoch = ctx.state.contentSizeAnimationEpoch || 0;
-+  const startsEligibleAnimation = canAnimate && logicalSize !== previousLogicalSizeRef.current && renderEpoch !== previousEpochRef.current && ctx.state.contentSizeAnimationEligible;
-+  const useAnimatedAxis = isAnimating || startsEligibleAnimation;
++  // Keep the animated size attached after transitions finish. Reanimated
++  // retains removed animated props, so switching to a static size leaves
++  // native scroll bounds stuck while logical measurements keep changing.
 +  const animatedStyle = Reanimated.useAnimatedStyle(() => {
 +    const size = Math.max(0, baseSize.value + animatedDelta.value);
 +    return horizontal ? { width: size } : { height: size };
@@ -1433,7 +1433,6 @@ index f1265fad74189591b5aae86cf2e3a31f9c0fdb02..59e218cb79f56c34995fb86c5de5a71f
 +      return;
 +    }
 +    isAnimatingRef.current = false;
-+    setIsAnimating(false);
 +    const state = ctx.state;
 +    if (state.contentSizeAnimationActiveEpoch !== epoch) {
 +      return;
@@ -1480,7 +1479,6 @@ index f1265fad74189591b5aae86cf2e3a31f9c0fdb02..59e218cb79f56c34995fb86c5de5a71f
 +    state.contentSizeAnimationActiveSignals.add(signalName);
 +    const wasAnimating = isAnimatingRef.current;
 +    isAnimatingRef.current = true;
-+    setIsAnimating(true);
 +    const run = ++animationRunRef.current;
 +    Reanimated.runOnUI((absoluteSize, previousSize, continuesAnimation, animationRun, animationEpoch) => {
 +      "worklet";
@@ -1495,13 +1493,12 @@ index f1265fad74189591b5aae86cf2e3a31f9c0fdb02..59e218cb79f56c34995fb86c5de5a71f
 +      }));
 +    })(logicalSize, previousLogicalSize, wasAnimating, run, epoch);
 +  }, [baseSize, animatedDelta, canAnimate, completeAnimation, ctx.state, logicalSize, renderEpoch, signalName, transition]);
-+  const sizeStyle = useAnimatedAxis ? animatedStyle : horizontal ? { width: logicalSize } : { height: logicalSize };
-+  return /* @__PURE__ */ React__namespace.createElement(Reanimated__default.default.View, { ...rest, style: [style, sizeStyle] }, children);
++  return /* @__PURE__ */ React__namespace.createElement(Reanimated__default.default.View, { ...rest, style: [style, animatedStyle] }, children);
 +});
  function setSharedValueValue(sharedValue, value) {
    if (!sharedValue) {
      return;
-@@ -245,10 +356,19 @@ var LegendListForwardedRef = typedMemo(
+@@ -245,10 +353,19 @@ var LegendListForwardedRef = typedMemo(
          );
        };
      }, [hasItemLayoutAnimation, recycleItems]);
@@ -1522,7 +1519,7 @@ index f1265fad74189591b5aae86cf2e3a31f9c0fdb02..59e218cb79f56c34995fb86c5de5a71f
          renderScrollComponent: renderReanimatedScrollComponent,
          ...IsNewArchitecture ? { stickyPositionComponentInternal } : {}
 diff --git a/reanimated.mjs b/reanimated.mjs
-index 29a00d5dc084fd408a0e0a0a4d64e856d0ed1525..bd3c680eb4abeca786d538ebf7b23a5725398942 100644
+index 29a00d5dc084fd408a0e0a0a4d64e856d0ed1525..cab29fd2a513470175baf2ac930772c7d9275642 100644
 --- a/reanimated.mjs
 +++ b/reanimated.mjs
 @@ -1,7 +1,7 @@
@@ -1577,7 +1574,7 @@ index 29a00d5dc084fd408a0e0a0a4d64e856d0ed1525..bd3c680eb4abeca786d538ebf7b23a57
        ref: refView,
        style: viewStyle,
        ...rest
-@@ -117,6 +138,96 @@ var ReanimatedPositionView = typedMemo(function ReanimatedPositionViewComponent(
+@@ -117,6 +138,93 @@ var ReanimatedPositionView = typedMemo(function ReanimatedPositionViewComponent(
      children
    );
  });
@@ -1591,12 +1588,12 @@ index 29a00d5dc084fd408a0e0a0a4d64e856d0ed1525..bd3c680eb4abeca786d538ebf7b23a57
 +  const previousEpochRef = React.useRef(ctx.state.contentSizeAnimationEpoch || 0);
 +  const animationRunRef = React.useRef(0);
 +  const isAnimatingRef = React.useRef(false);
-+  const [isAnimating, setIsAnimating] = React.useState(false);
 +  const transition = props.layoutTransition;
 +  const canAnimate = !!transition && typeof transition.getAnimationAndConfig === "function";
 +  const renderEpoch = ctx.state.contentSizeAnimationEpoch || 0;
-+  const startsEligibleAnimation = canAnimate && logicalSize !== previousLogicalSizeRef.current && renderEpoch !== previousEpochRef.current && ctx.state.contentSizeAnimationEligible;
-+  const useAnimatedAxis = isAnimating || startsEligibleAnimation;
++  // Keep the animated size attached after transitions finish. Reanimated
++  // retains removed animated props, so switching to a static size leaves
++  // native scroll bounds stuck while logical measurements keep changing.
 +  const animatedStyle = useAnimatedStyle(() => {
 +    const size = Math.max(0, baseSize.value + animatedDelta.value);
 +    return horizontal ? { width: size } : { height: size };
@@ -1606,7 +1603,6 @@ index 29a00d5dc084fd408a0e0a0a4d64e856d0ed1525..bd3c680eb4abeca786d538ebf7b23a57
 +      return;
 +    }
 +    isAnimatingRef.current = false;
-+    setIsAnimating(false);
 +    const state = ctx.state;
 +    if (state.contentSizeAnimationActiveEpoch !== epoch) {
 +      return;
@@ -1653,7 +1649,6 @@ index 29a00d5dc084fd408a0e0a0a4d64e856d0ed1525..bd3c680eb4abeca786d538ebf7b23a57
 +    state.contentSizeAnimationActiveSignals.add(signalName);
 +    const wasAnimating = isAnimatingRef.current;
 +    isAnimatingRef.current = true;
-+    setIsAnimating(true);
 +    const run = ++animationRunRef.current;
 +    runOnUI((absoluteSize, previousSize, continuesAnimation, animationRun, animationEpoch) => {
 +      "worklet";
@@ -1668,13 +1663,12 @@ index 29a00d5dc084fd408a0e0a0a4d64e856d0ed1525..bd3c680eb4abeca786d538ebf7b23a57
 +      }));
 +    })(logicalSize, previousLogicalSize, wasAnimating, run, epoch);
 +  }, [baseSize, animatedDelta, canAnimate, completeAnimation, ctx.state, logicalSize, renderEpoch, signalName, transition]);
-+  const sizeStyle = useAnimatedAxis ? animatedStyle : horizontal ? { width: logicalSize } : { height: logicalSize };
-+  return /* @__PURE__ */ React.createElement(Reanimated.View, { ...rest, style: [style, sizeStyle] }, children);
++  return /* @__PURE__ */ React.createElement(Reanimated.View, { ...rest, style: [style, animatedStyle] }, children);
 +});
  function setSharedValueValue(sharedValue, value) {
    if (!sharedValue) {
      return;
-@@ -221,10 +332,19 @@ var LegendListForwardedRef = typedMemo(
+@@ -221,10 +329,19 @@ var LegendListForwardedRef = typedMemo(
          );
        };
      }, [hasItemLayoutAnimation, recycleItems]);
