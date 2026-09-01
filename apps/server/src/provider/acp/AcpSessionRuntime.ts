@@ -76,8 +76,11 @@ export interface AcpSessionRuntimeOptions {
     readonly name: string;
     readonly version: string;
   };
-  readonly authMethodId: string;
+  readonly authMethodId?: string;
   readonly mcpServers?: ReadonlyArray<EffectAcpSchema.McpServer>;
+  readonly onConfigOptionsChanged?: (
+    options: ReadonlyArray<EffectAcpSchema.SessionConfigOption>,
+  ) => Effect.Effect<void, never>;
   readonly requestLogger?: (event: AcpSessionRequestLogEvent) => Effect.Effect<void, never>;
   readonly protocolLogging?: {
     readonly logIncoming?: boolean;
@@ -182,18 +185,20 @@ export class AcpSessionRuntime extends Context.Service<
      * @see https://agentclientprotocol.com/protocol/extensibility
      */
     readonly handleExtNotification: EffectAcpClient.AcpClient["Service"]["handleExtNotification"];
-    /**
-     * Initializes the ACP connection, authenticates, and loads, resumes, or creates the session.
-     * Concurrent calls share the same in-flight startup and a failed startup may be retried.
-     */
+    readonly connect: () => Effect.Effect<
+      EffectAcpSchema.InitializeResponse,
+      EffectAcpErrors.AcpError
+    >;
+    /** Authenticates when configured, then loads or creates the session. */
     readonly start: () => Effect.Effect<AcpSessionRuntimeStartResult, EffectAcpErrors.AcpError>;
+    readonly close: Effect.Effect<void, EffectAcpErrors.AcpError>;
     /** Stream of parsed ACP session events emitted after startup. */
     readonly getEvents: () => Stream.Stream<AcpSessionRuntimeEvent, never>;
     /** Waits until the current event consumer has processed every queued event. */
     readonly drainEvents: Effect.Effect<void>;
     /** Latest mode state observed from session setup and `session/update` notifications. */
     readonly getModeState: Effect.Effect<AcpSessionModeState | undefined>;
-    /** Latest configuration options observed from session setup and configuration writes. */
+    /** Latest configuration options observed from session setup, writes, and update notifications. */
     readonly getConfigOptions: Effect.Effect<ReadonlyArray<EffectAcpSchema.SessionConfigOption>>;
     /**
      * Sends a prompt turn to the active session.
@@ -402,14 +407,20 @@ export const make = (
         ) {
           return;
         }
+        const previousConfigOptions = yield* Ref.get(configOptionsRef);
         yield* handleSessionUpdate({
           queue: eventQueue,
+          configOptionsRef,
           modeStateRef,
           toolCallsRef,
           assistantSegmentRef,
           assistantItemRuntimeId,
           params: notification,
         });
+        const nextConfigOptions = yield* Ref.get(configOptionsRef);
+        if (nextConfigOptions !== previousConfigOptions && options.onConfigOptionsChanged) {
+          yield* options.onConfigOptionsChanged(nextConfigOptions);
+        }
       }),
     );
     const initializeClientCapabilities = {
@@ -492,7 +503,17 @@ export const make = (
         | EffectAcpSchema.LoadSessionResponse
         | EffectAcpSchema.NewSessionResponse
         | EffectAcpSchema.ResumeSessionResponse,
-    ): Effect.Effect<void> => Ref.set(configOptionsRef, sessionConfigOptionsFromSetup(response));
+    ): Effect.Effect<void> => {
+      const configOptions = sessionConfigOptionsFromSetup(response);
+      return Ref.set(configOptionsRef, configOptions).pipe(
+        Effect.tap(() =>
+          options.onConfigOptionsChanged
+            ? options.onConfigOptionsChanged(configOptions)
+            : Effect.void,
+        ),
+        Effect.asVoid,
+      );
+    };
 
     const updateCurrentModeId = (modeId: string): Effect.Effect<void> =>
       Ref.update(modeStateRef, (current) =>
@@ -537,7 +558,7 @@ export const make = (
         ),
       );
 
-    const startOnce = Effect.gen(function* () {
+    const connectOnce = Effect.gen(function* () {
       const initializePayload = {
         protocolVersion: 1,
         clientCapabilities: initializeClientCapabilities,
@@ -550,26 +571,43 @@ export const make = (
         acp.agent.initialize(initializePayload),
       );
 
-      const authenticatePayload = {
-        methodId: options.authMethodId,
-      } satisfies EffectAcpSchema.AuthenticateRequest;
+      return initializeResult;
+    });
 
-      yield* runLoggedRequest(
-        "authenticate",
-        authenticatePayload,
-        acp.agent.authenticate(authenticatePayload),
-      );
+    const connect = yield* Effect.cached(connectOnce);
+
+    const startOnce = Effect.gen(function* () {
+      const initializeResult = yield* connect;
+
+      if (options.authMethodId !== undefined) {
+        const authenticatePayload = {
+          methodId: options.authMethodId,
+        } satisfies EffectAcpSchema.AuthenticateRequest;
+
+        yield* runLoggedRequest(
+          "authenticate",
+          authenticatePayload,
+          acp.agent.authenticate(authenticatePayload),
+        );
+      }
 
       let sessionId: string;
       let sessionSetupResult:
         | EffectAcpSchema.LoadSessionResponse
         | EffectAcpSchema.NewSessionResponse
         | EffectAcpSchema.ResumeSessionResponse;
-      if (options.resumeSessionId) {
+      const agentCapabilities = initializeResult.agentCapabilities;
+      const mcpCapabilities = agentCapabilities?.mcpCapabilities;
+      const mcpServers = (options.mcpServers ?? []).filter((server) => {
+        if ("type" in server && server.type === "http") return mcpCapabilities?.http === true;
+        if ("type" in server && server.type === "sse") return mcpCapabilities?.sse === true;
+        return true;
+      });
+      if (options.resumeSessionId && agentCapabilities?.loadSession === true) {
         const loadPayload = {
           sessionId: options.resumeSessionId,
           cwd: options.cwd,
-          mcpServers: options.mcpServers ?? [],
+          mcpServers,
         } satisfies EffectAcpSchema.LoadSessionRequest;
         const sessionLoadTimeout = Duration.fromInputUnsafe(
           options.sessionLoadTimeout ?? defaultSessionLoadTimeout,
@@ -642,7 +680,7 @@ export const make = (
       } else {
         const createPayload = {
           cwd: options.cwd,
-          mcpServers: options.mcpServers ?? [],
+          mcpServers,
         } satisfies EffectAcpSchema.NewSessionRequest;
         const created = yield* runLoggedRequest(
           "session/new",
@@ -654,7 +692,7 @@ export const make = (
       }
 
       yield* Ref.set(modeStateRef, parseSessionModeState(sessionSetupResult));
-      yield* Ref.set(configOptionsRef, sessionConfigOptionsFromSetup(sessionSetupResult));
+      yield* updateConfigOptions(sessionSetupResult);
 
       const nextState = {
         sessionId,
@@ -713,7 +751,22 @@ export const make = (
       handleUnknownExtNotification: acp.handleUnknownExtNotification,
       handleExtRequest: acp.handleExtRequest,
       handleExtNotification: acp.handleExtNotification,
+      connect: () => connect,
       start: () => start,
+      close: Ref.get(startStateRef).pipe(
+        Effect.flatMap((state) => {
+          if (
+            state._tag !== "Started" ||
+            state.result.initializeResult.agentCapabilities?.sessionCapabilities?.close == null
+          ) {
+            return Effect.void;
+          }
+          const payload = { sessionId: state.result.sessionId };
+          return runLoggedRequest("session/close", payload, acp.agent.closeSession(payload)).pipe(
+            Effect.asVoid,
+          );
+        }),
+      ),
       getEvents: () => Stream.fromQueue(eventQueue),
       drainEvents: Effect.gen(function* () {
         const acknowledge = yield* Deferred.make<void>();
@@ -853,6 +906,7 @@ function configOptionCurrentValueMatches(
 
 const handleSessionUpdate = ({
   queue,
+  configOptionsRef,
   modeStateRef,
   toolCallsRef,
   assistantSegmentRef,
@@ -860,6 +914,7 @@ const handleSessionUpdate = ({
   params,
 }: {
   readonly queue: Queue.Queue<AcpSessionRuntimeEvent>;
+  readonly configOptionsRef: Ref.Ref<ReadonlyArray<EffectAcpSchema.SessionConfigOption>>;
   readonly modeStateRef: Ref.Ref<AcpSessionModeState | undefined>;
   readonly toolCallsRef: Ref.Ref<Map<string, AcpToolCallTrackedState>>;
   readonly assistantSegmentRef: Ref.Ref<AcpAssistantSegmentState>;
@@ -868,6 +923,9 @@ const handleSessionUpdate = ({
 }): Effect.Effect<void> =>
   Effect.gen(function* () {
     const parsed = parseSessionUpdateEvent(params);
+    if (parsed.configOptions !== undefined) {
+      yield* Ref.set(configOptionsRef, parsed.configOptions);
+    }
     if (parsed.modeId) {
       yield* Ref.update(modeStateRef, (current) =>
         current === undefined ? current : updateModeState(current, parsed.modeId!),
