@@ -69,6 +69,7 @@ import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSet
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import {
+  filterTextGenerationProviders,
   getCustomModelOptionsByInstance,
   resolveAppModelSelectionState,
   withoutPlanAgentSelection,
@@ -1909,9 +1910,7 @@ export function GeneralSettingsPanel() {
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
   const supportsAutoSettlement =
     useAtomValue(primaryServerConfigAtom)?.environment.capabilities.threadAutoSettlement === true;
-  const textGenerationProviders = serverProviders.filter(
-    (provider) => provider.driver !== ProviderDriverKind.make("acp"),
-  );
+  const textGenerationProviders = filterTextGenerationProviders(serverProviders);
   const diagnosticsDescription = formatDiagnosticsDescription({
     localTracingEnabled: observability?.localTracingEnabled ?? false,
     otlpTracesEnabled: observability?.otlpTracesEnabled ?? false,
@@ -2566,7 +2565,7 @@ export function GeneralSettingsPanel() {
                         ...settings,
                         textGenerationModelSelection: createModelSelection(instanceId, model),
                       },
-                      serverProviders,
+                      textGenerationProviders,
                     ),
                   });
                 }}
@@ -2599,7 +2598,7 @@ export function GeneralSettingsPanel() {
                           nextOptions,
                         ),
                       },
-                      serverProviders,
+                      textGenerationProviders,
                     ),
                   });
                 }}
