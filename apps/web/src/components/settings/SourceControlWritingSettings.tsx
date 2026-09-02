@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useRef } from "react";
-import { ProviderDriverKind, type SourceControlWritingStyleMode } from "@t3tools/contracts";
+import type { SourceControlWritingStyleMode } from "@t3tools/contracts";
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 import { createModelSelection } from "@t3tools/shared/model";
 import { resolveSourceControlWriterModelSelection } from "@t3tools/shared/serverSettings";
@@ -12,6 +12,7 @@ import {
   sortProviderInstanceEntries,
 } from "../../providerInstances";
 import {
+  filterTextGenerationProviders,
   getCustomModelOptionsByInstance,
   resolveAppModelSelectionState,
 } from "../../modelSelection";
@@ -44,9 +45,7 @@ const MODE_OPTIONS: Record<SourceControlWritingStyleMode, { label: string; descr
 export function SourceControlWritingSettingsSection() {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
-  const serverProviders = useAtomValue(primaryServerProvidersAtom).filter(
-    (provider) => provider.driver !== ProviderDriverKind.make("acp"),
-  );
+  const serverProviders = filterTextGenerationProviders(useAtomValue(primaryServerProvidersAtom));
   const customInstructionsRef = useRef<HTMLTextAreaElement>(null);
   const style = settings.sourceControlWritingStyle;
   const defaults = DEFAULT_UNIFIED_SETTINGS.sourceControlWritingStyle;
