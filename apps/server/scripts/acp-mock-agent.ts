@@ -19,6 +19,8 @@ const emitInterleavedAssistantToolCalls =
 const emitGenericToolPlaceholders = process.env.T3_ACP_EMIT_GENERIC_TOOL_PLACEHOLDERS === "1";
 const emitAskQuestion = process.env.T3_ACP_EMIT_ASK_QUESTION === "1";
 const emitThoughtChunk = process.env.T3_ACP_EMIT_THOUGHT_CHUNK === "1";
+// Legacy-modes agent: advertises `modes` but no `mode` config option.
+const omitModeConfigOption = process.env.T3_ACP_OMIT_MODE_CONFIG_OPTION === "1";
 const emitXAiAskUserQuestion = process.env.T3_ACP_EMIT_XAI_ASK_USER_QUESTION === "1";
 const emitXAiExitPlanMode = process.env.T3_ACP_EMIT_XAI_EXIT_PLAN_MODE === "1";
 const emitXAiPlanMdWrite = process.env.T3_ACP_EMIT_XAI_PLAN_MD_WRITE === "1";
@@ -111,19 +113,20 @@ process.once("exit", (code) => {
 
 function configOptions(): ReadonlyArray<AcpSchema.SessionConfigOption> {
   if (parameterizedModelPicker) {
+    const modeOption: AcpSchema.SessionConfigOption = {
+      id: "mode",
+      name: "Mode",
+      category: "mode",
+      type: "select",
+      currentValue: currentModeId,
+      options: availableModes.map((mode) => ({
+        value: mode.id,
+        name: mode.name,
+        ...(mode.description ? { description: mode.description } : {}),
+      })),
+    };
     const baseOptions: Array<AcpSchema.SessionConfigOption> = [
-      {
-        id: "mode",
-        name: "Mode",
-        category: "mode",
-        type: "select",
-        currentValue: currentModeId,
-        options: availableModes.map((mode) => ({
-          value: mode.id,
-          name: mode.name,
-          ...(mode.description ? { description: mode.description } : {}),
-        })),
-      },
+      ...(omitModeConfigOption ? [] : [modeOption]),
       {
         id: "model",
         name: "Model",
@@ -437,6 +440,13 @@ const program = Effect.gen(function* () {
     }),
   );
 
+  yield* agent.handleSetSessionMode((request) =>
+    Effect.sync(() => {
+      currentModeId = request.modeId;
+      return {};
+    }),
+  );
+
   yield* agent.handleSetSessionConfigOption((request) =>
     Effect.gen(function* () {
       if (exitOnSetConfigOption) {
@@ -454,6 +464,12 @@ const program = Effect.gen(function* () {
         );
       }
       if (request.configId === "mode" && typeof request.value === "string") {
+        if (omitModeConfigOption) {
+          return yield* AcpError.AcpRequestError.invalidParams(
+            `Unknown session config option "mode"`,
+            { method: "session/set_config_option", params: request },
+          );
+        }
         currentModeId = request.value;
       }
       if (request.configId === "model" && typeof request.value === "string") {

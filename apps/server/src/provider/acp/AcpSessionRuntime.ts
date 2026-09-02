@@ -873,7 +873,23 @@ export const make = (
             if (modeState?.currentModeId === modeId) {
               return Effect.succeed({} satisfies EffectAcpSchema.SetSessionModeResponse);
             }
-            return setConfigOption("mode", modeId).pipe(
+            return Ref.get(configOptionsRef).pipe(
+              Effect.flatMap((configOptions) =>
+                findSessionConfigOption(configOptions, "mode")
+                  ? setConfigOption("mode", modeId)
+                  : // Agents that only expose legacy `modes` have no `mode` config
+                    // option; the dedicated `session/set_mode` request is the API.
+                    getStartedState.pipe(
+                      Effect.flatMap((started) => {
+                        const payload = { sessionId: started.sessionId, modeId };
+                        return runLoggedRequest(
+                          "session/set_mode",
+                          payload,
+                          acp.agent.setSessionMode(payload),
+                        );
+                      }),
+                    ),
+              ),
               Effect.tap(() => updateCurrentModeId(modeId)),
               Effect.as({} satisfies EffectAcpSchema.SetSessionModeResponse),
             );

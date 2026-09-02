@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off
+// @effect-diagnostics nodeBuiltinImport:off - the suite creates real temp dirs and reads the mock agent's JSONL request log outside the Effect FileSystem.
 import * as NodePath from "node:path";
 import * as NodeOS from "node:os";
 import * as NodeFSP from "node:fs/promises";
@@ -283,6 +283,50 @@ acpAdapterTestLayer("AcpAdapterLive", (it) => {
         { outcome: { outcome: "selected", optionId: "agent-reject" } },
       );
     }),
+  );
+
+  it.effect(
+    "switches modes through session/set_mode when the agent only exposes legacy modes",
+    () =>
+      Effect.gen(function* () {
+        const requestLogPath = yield* makeRequestLog("acp-legacy-modes-");
+        const adapter = yield* makeTestAcpAdapter({
+          ...process.env,
+          T3_ACP_REQUEST_LOG_PATH: requestLogPath,
+          T3_ACP_OMIT_MODE_CONFIG_OPTION: "1",
+        });
+        const threadId = ThreadId.make("acp-legacy-modes-thread");
+
+        yield* adapter.startSession({
+          threadId,
+          provider: ACP_PROVIDER,
+          cwd: process.cwd(),
+          runtimeMode: "full-access",
+        });
+        yield* adapter.sendTurn({
+          threadId,
+          input: "plan it",
+          attachments: [],
+          interactionMode: "plan",
+        });
+        yield* adapter.stopSession(threadId);
+
+        const requests = yield* Effect.promise(() => readJsonLines(requestLogPath));
+        const modeWrites = requests.flatMap((request) =>
+          request.method === "session/set_mode"
+            ? [(request.params as { modeId: string }).modeId]
+            : [],
+        );
+        // full-access start selects the implement mode, the plan turn the plan alias.
+        assert.deepStrictEqual(modeWrites, ["code", "architect"]);
+        assert.isEmpty(
+          requests.filter(
+            (request) =>
+              request.method === "session/set_config_option" &&
+              (request.params as { configId: string }).configId === "mode",
+          ),
+        );
+      }),
   );
 
   it.effect("settles the turn as failed when the prompt request fails", () =>
