@@ -101,8 +101,12 @@ export function upsertProviderWorkspaceSnapshot(
 }
 
 const shouldRetainMissingProviderModels = (provider: ServerProvider): boolean => {
+  // A generic ACP probe only runs `initialize`; the model inventory arrives
+  // from active sessions. A ready probe therefore carries just the synthetic
+  // default and must not evict what earlier sessions discovered. Disabled and
+  // missing-CLI snapshots remain authoritative removals.
   if (provider.driver === ProviderDriverKind.make("acp")) {
-    return provider.enabled && provider.installed && provider.status !== "ready";
+    return provider.enabled && provider.installed;
   }
   if (provider.driver !== ProviderDriverKind.make("opencode")) {
     return true;
