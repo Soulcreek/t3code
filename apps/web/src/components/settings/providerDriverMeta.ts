@@ -8,7 +8,7 @@ import {
   ProviderDriverKind,
 } from "@t3tools/contracts";
 import type * as Schema from "effect/Schema";
-import { AcpAgentIcon } from "../Icons";
+import { AcpAgentIcon } from "../AcpAgentIcon";
 import { ClaudeAI, CursorIcon, GrokIcon, type Icon, OpenAI, OpenCodeIcon } from "../Icons";
 
 type ProviderSettingsSchema = {
