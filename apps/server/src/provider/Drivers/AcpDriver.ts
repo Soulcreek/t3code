@@ -169,7 +169,7 @@ export const AcpDriver: ProviderDriver<AcpSettings, AcpDriverEnv> = {
           clientInfo: { name: "t3-code", version: "0.0.0" },
         }).pipe(
           Effect.provideService(Crypto.Crypto, crypto),
-          Effect.flatMap((runtime) => runtime.connect()),
+          Effect.flatMap((runtime) => runtime.initialize()),
           Effect.scoped,
           Effect.timeout("10 seconds"),
           Effect.result,
