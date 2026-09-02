@@ -79,6 +79,18 @@ export interface AcpSessionRuntimeOptions {
   /** Omit for agents that are authenticated outside T3 Code; `authenticate` is then skipped. */
   readonly authMethodId?: string;
   readonly mcpServers?: ReadonlyArray<EffectAcpSchema.McpServer>;
+  /**
+   * Honor the agent's advertised `agentCapabilities` during session setup: drop
+   * MCP servers whose transport the agent did not advertise and create a new
+   * session when `loadSession` is unsupported. Off by default so vendor
+   * runtimes keep their established behavior.
+   */
+  readonly respectAgentCapabilities?: boolean;
+  /**
+   * Surface `agent_thought_chunk` updates as `reasoning_text` deltas. Off by
+   * default so vendor runtimes keep their assistant-only stream.
+   */
+  readonly reasoningStream?: boolean;
   readonly onConfigOptionsChanged?: (
     options: ReadonlyArray<EffectAcpSchema.SessionConfigOption>,
   ) => Effect.Effect<void, never>;
@@ -434,6 +446,7 @@ export const make = (
           toolCallsRef,
           assistantSegmentRef,
           assistantItemRuntimeId,
+          emitReasoning: options.reasoningStream === true,
           params: notification,
         });
         const nextConfigOptions = yield* Ref.get(configOptionsRef);
@@ -612,12 +625,16 @@ export const make = (
       const mcpCapabilities = agentCapabilities?.mcpCapabilities;
       // Agents reject transports they did not advertise, so drop those servers
       // instead of failing session setup for every configured MCP server.
-      const mcpServers = (options.mcpServers ?? []).filter((server) => {
-        if ("type" in server && server.type === "http") return mcpCapabilities?.http === true;
-        if ("type" in server && server.type === "sse") return mcpCapabilities?.sse === true;
-        return true;
-      });
-      if (options.resumeSessionId && agentCapabilities?.loadSession === true) {
+      const mcpServers = options.respectAgentCapabilities
+        ? (options.mcpServers ?? []).filter((server) => {
+            if ("type" in server && server.type === "http") return mcpCapabilities?.http === true;
+            if ("type" in server && server.type === "sse") return mcpCapabilities?.sse === true;
+            return true;
+          })
+        : (options.mcpServers ?? []);
+      const canLoadSession =
+        !options.respectAgentCapabilities || agentCapabilities?.loadSession === true;
+      if (options.resumeSessionId && canLoadSession) {
         const loadPayload = {
           sessionId: options.resumeSessionId,
           cwd: options.cwd,
@@ -928,6 +945,7 @@ const handleSessionUpdate = ({
   toolCallsRef,
   assistantSegmentRef,
   assistantItemRuntimeId,
+  emitReasoning,
   params,
 }: {
   readonly queue: Queue.Queue<AcpSessionRuntimeEvent>;
@@ -936,6 +954,7 @@ const handleSessionUpdate = ({
   readonly toolCallsRef: Ref.Ref<Map<string, AcpToolCallTrackedState>>;
   readonly assistantSegmentRef: Ref.Ref<AcpAssistantSegmentState>;
   readonly assistantItemRuntimeId: string;
+  readonly emitReasoning: boolean;
   readonly params: EffectAcpSchema.SessionNotification;
 }): Effect.Effect<void> =>
   Effect.gen(function* () {
@@ -989,6 +1008,9 @@ const handleSessionUpdate = ({
         continue;
       }
       if (event._tag === "ContentDelta") {
+        if (event.streamKind === "reasoning_text" && !emitReasoning) {
+          continue;
+        }
         if (event.text.trim().length === 0) {
           const assistantSegmentState = yield* Ref.get(assistantSegmentRef);
           if (!assistantSegmentState.activeItemId) {

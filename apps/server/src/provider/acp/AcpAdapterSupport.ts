@@ -72,6 +72,18 @@ export function mapAcpToAdapterError(
   });
 }
 
+export function acpPermissionOutcome(decision: ProviderApprovalDecision): string {
+  switch (decision) {
+    case "acceptForSession":
+      return "allow-always";
+    case "accept":
+      return "allow-once";
+    case "decline":
+    default:
+      return "reject-once";
+  }
+}
+
 export function selectAcpPermissionOptionId(
   request: Pick<EffectAcpSchema.RequestPermissionRequest, "options">,
   decision: ProviderApprovalDecision,

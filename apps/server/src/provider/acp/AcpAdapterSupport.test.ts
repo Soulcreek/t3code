@@ -4,12 +4,19 @@ import { ProviderDriverKind } from "@t3tools/contracts";
 
 import {
   ACP_AUTH_REQUIRED_DETAIL,
+  acpPermissionOutcome,
   isAcpAuthRequiredError,
   mapAcpToAdapterError,
   selectAcpPermissionOptionId,
 } from "./AcpAdapterSupport.ts";
 
 describe("AcpAdapterSupport", () => {
+  it("maps ACP approval decisions to permission outcomes", () => {
+    expect(acpPermissionOutcome("accept")).toBe("allow-once");
+    expect(acpPermissionOutcome("acceptForSession")).toBe("allow-always");
+    expect(acpPermissionOutcome("decline")).toBe("reject-once");
+  });
+
   it("selects the offered rejection option when an agent only advertises reject_always", () => {
     const optionId = selectAcpPermissionOptionId(
       {
