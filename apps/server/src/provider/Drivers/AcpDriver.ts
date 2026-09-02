@@ -116,15 +116,18 @@ export const AcpDriver: ProviderDriver<AcpSettings, AcpDriverEnv> = {
         readonly displayName?: string;
         readonly version?: string | null;
         readonly models?: ReadonlyArray<ServerProviderModel>;
+        readonly modelCapabilities?: ModelCapabilities;
       }) => ({
         ...buildServerProvider({
           presentation: { displayName: displayName?.trim() || input.displayName || agentName },
           enabled,
           checkedAt: input.checkedAt,
+          // Custom rows share the session option descriptors discovered for the
+          // agent, so the UI can offer the same options for them.
           models: providerModelsFromSettings(
             input.models ?? defaultModels(),
             config.customModels,
-            EMPTY_CAPABILITIES,
+            input.modelCapabilities ?? EMPTY_CAPABILITIES,
           ),
           probe: {
             installed: input.installed,
@@ -216,6 +219,7 @@ export const AcpDriver: ProviderDriver<AcpSettings, AcpDriverEnv> = {
           ...(discoveredDisplayName ? { displayName: discoveredDisplayName } : {}),
           version: agentInfo?.version.trim() || null,
           models: [...defaultModels(modelCapabilities), ...models],
+          modelCapabilities,
         });
       }).pipe(
         Effect.provideService(FileSystem.FileSystem, fileSystem),
