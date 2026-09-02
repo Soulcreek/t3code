@@ -1,9 +1,9 @@
 import { ProviderDriverKind } from "@t3tools/contracts";
-import { ACPRegistryIcon } from "../Icons";
+import { AcpAgentIcon } from "../Icons";
 import { ClaudeAI, CursorIcon, GrokIcon, Icon, OpenAI, OpenCodeIcon } from "../Icons";
 
 export const PROVIDER_ICON_BY_PROVIDER: Partial<Record<ProviderDriverKind, Icon>> = {
-  [ProviderDriverKind.make("acp")]: ACPRegistryIcon,
+  [ProviderDriverKind.make("acp")]: AcpAgentIcon,
   [ProviderDriverKind.make("codex")]: OpenAI,
   [ProviderDriverKind.make("claudeAgent")]: ClaudeAI,
   [ProviderDriverKind.make("opencode")]: OpenCodeIcon,

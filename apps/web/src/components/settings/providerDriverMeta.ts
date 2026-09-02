@@ -8,7 +8,7 @@ import {
   ProviderDriverKind,
 } from "@t3tools/contracts";
 import type * as Schema from "effect/Schema";
-import { ACPRegistryIcon } from "../Icons";
+import { AcpAgentIcon } from "../Icons";
 import { ClaudeAI, CursorIcon, GrokIcon, type Icon, OpenAI, OpenCodeIcon } from "../Icons";
 
 type ProviderSettingsSchema = {
@@ -72,7 +72,7 @@ export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = 
   {
     value: ProviderDriverKind.make("acp"),
     label: "ACP Agent",
-    icon: ACPRegistryIcon,
+    icon: AcpAgentIcon,
     badgeLabel: "Early Access",
     settingsSchema: AcpSettings,
   },
