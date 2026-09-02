@@ -28,6 +28,7 @@ import {
 
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { ACP_AGENT_DEFAULT_MODEL_SLUG } from "../acp/AcpRuntimeModel.ts";
 import * as AcpSessionRuntime from "../acp/AcpSessionRuntime.ts";
 import type { CursorAdapterShape } from "../Services/CursorAdapter.ts";
 import { makeAcpAdapter, makeCursorAdapter } from "./CursorAdapter.ts";
@@ -241,6 +242,52 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
         requests.map((request) => request.method),
         "session/close",
       );
+    }),
+  );
+
+  it.effect("switches standard ACP models in-session and keeps the agent default opaque", () =>
+    Effect.gen(function* () {
+      const tempDir = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "standard-acp-default-")),
+      );
+      const requestLogPath = NodePath.join(tempDir, "requests.jsonl");
+      const adapter = yield* makeTestAcpAdapter({
+        ...process.env,
+        T3_ACP_REQUEST_LOG_PATH: requestLogPath,
+      });
+      const threadId = ThreadId.make("standard-acp-default-thread");
+
+      assert.equal(adapter.capabilities.sessionModelSwitch, "in-session");
+
+      const session = yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("acp"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        modelSelection: createModelSelection(
+          ProviderInstanceId.make("acp_test"),
+          ACP_AGENT_DEFAULT_MODEL_SLUG,
+        ),
+      });
+      assert.equal(session.model, ACP_AGENT_DEFAULT_MODEL_SLUG);
+
+      yield* adapter.sendTurn({
+        threadId,
+        input: "switch model",
+        attachments: [],
+        modelSelection: createModelSelection(ProviderInstanceId.make("acp_test"), "composer-2"),
+      });
+      yield* adapter.stopSession(threadId);
+
+      const requests = yield* Effect.promise(() => readJsonLines(requestLogPath));
+      const modelWrites = requests.flatMap((request) =>
+        request.method === "session/set_config_option" &&
+        (request.params as { configId: string }).configId === "model"
+          ? [(request.params as { value: unknown }).value]
+          : [],
+      );
+      assert.deepStrictEqual(modelWrites, ["composer-2"]);
+      assert.equal(requests.filter((request) => request.method === "session/new").length, 1);
     }),
   );
 

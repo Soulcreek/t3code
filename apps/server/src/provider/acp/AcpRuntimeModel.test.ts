@@ -3,13 +3,16 @@ import { describe, expect, it } from "vite-plus/test";
 import type * as EffectAcpSchema from "effect-acp/schema";
 
 import {
+  ACP_AGENT_DEFAULT_MODEL_SLUG,
   buildAcpModelCapabilities,
   decideToolCallUpdateEmission,
   extractModelConfigId,
+  isAcpAgentDefaultModel,
   mergeToolCallState,
   parsePermissionRequest,
   parseSessionModeState,
   parseSessionUpdateEvent,
+  resolveSessionConfigOptionValue,
   sessionUpdateIsReplay,
   syntheticLoadSessionResponseFromInitialize,
   toolCallProgressLength,
@@ -63,6 +66,37 @@ describe("AcpRuntimeModel", () => {
     } satisfies EffectAcpSchema.NewSessionResponse);
 
     expect(modelConfigId).toBe("model");
+  });
+
+  it("maps trimmed UI selections back to the advertised config option value", () => {
+    const modelConfig = {
+      id: "model",
+      name: "Model",
+      category: "model",
+      type: "select",
+      currentValue: " gpt-5 ",
+      options: [
+        { group: "openai", name: "OpenAI", options: [{ value: " gpt-5 ", name: "GPT-5" }] },
+        {
+          group: "anthropic",
+          name: "Anthropic",
+          options: [{ value: "claude-sonnet-4.5", name: "Sonnet 4.5" }],
+        },
+      ],
+    } satisfies EffectAcpSchema.SessionConfigOption;
+
+    expect(resolveSessionConfigOptionValue(modelConfig, "gpt-5")).toBe(" gpt-5 ");
+    expect(resolveSessionConfigOptionValue(modelConfig, " claude-sonnet-4.5 ")).toBe(
+      "claude-sonnet-4.5",
+    );
+    expect(resolveSessionConfigOptionValue(modelConfig, "unknown")).toBeUndefined();
+    expect(resolveSessionConfigOptionValue(modelConfig, "  ")).toBeUndefined();
+  });
+
+  it("treats only the reserved sentinel as the ACP agent default model", () => {
+    expect(isAcpAgentDefaultModel(ACP_AGENT_DEFAULT_MODEL_SLUG)).toBe(true);
+    expect(isAcpAgentDefaultModel(` ${ACP_AGENT_DEFAULT_MODEL_SLUG} `)).toBe(true);
+    expect(isAcpAgentDefaultModel("agent-default")).toBe(false);
   });
 
   it("projects ACP reasoning and model configuration into T3 model traits", () => {
