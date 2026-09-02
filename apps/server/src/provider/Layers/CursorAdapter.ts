@@ -315,12 +315,15 @@ function applyRequestedSessionConfiguration<E>(input: {
         appliedModel = ACP_AGENT_DEFAULT_MODEL_SLUG;
       } else {
         const modelConfig = findModelConfigOption(yield* input.runtime.getConfigOptions);
-        const advertisedModel = modelConfig
-          ? resolveSessionConfigOptionValue(modelConfig, requestedModel)
-          : undefined;
-        if (modelConfig && advertisedModel !== undefined) {
+        if (modelConfig) {
+          // Custom models that the agent does not advertise pass through so the
+          // runtime's option validation reports them instead of silently
+          // running the turn on the agent default.
           yield* input.runtime
-            .setConfigOption(modelConfig.id, advertisedModel)
+            .setConfigOption(
+              modelConfig.id,
+              resolveSessionConfigOptionValue(modelConfig, requestedModel) ?? requestedModel,
+            )
             .pipe(Effect.mapError(mapConfigError));
           appliedModel = requestedModel;
         }

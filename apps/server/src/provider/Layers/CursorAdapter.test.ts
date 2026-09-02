@@ -277,6 +277,18 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
         attachments: [],
         modelSelection: createModelSelection(ProviderInstanceId.make("acp_test"), "composer-2"),
       });
+      // A custom model the agent does not advertise is forwarded and rejected by
+      // the runtime's option validation rather than silently ignored.
+      const rejected = yield* adapter
+        .sendTurn({
+          threadId,
+          input: "custom model",
+          attachments: [],
+          modelSelection: createModelSelection(ProviderInstanceId.make("acp_test"), "my-custom"),
+        })
+        .pipe(Effect.flip);
+      assert.equal(rejected._tag, "ProviderAdapterRequestError");
+      assert.match(rejected.message, /expected one of/);
       yield* adapter.stopSession(threadId);
 
       const requests = yield* Effect.promise(() => readJsonLines(requestLogPath));
