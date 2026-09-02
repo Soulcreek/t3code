@@ -285,6 +285,45 @@ acpAdapterTestLayer("AcpAdapterLive", (it) => {
     }),
   );
 
+  it.effect("settles the turn as failed when the prompt request fails", () =>
+    Effect.gen(function* () {
+      const adapter = yield* makeTestAcpAdapter({ ...process.env, T3_ACP_FAIL_PROMPT: "1" });
+      const threadId = ThreadId.make("acp-failed-prompt-thread");
+      const turnEventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.type === "turn.started" || event.type === "turn.completed"),
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ACP_PROVIDER,
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+      });
+      const error = yield* adapter
+        .sendTurn({ threadId, input: "please fail", attachments: [] })
+        .pipe(Effect.flip);
+      assert.equal(error._tag, "ProviderAdapterRequestError");
+
+      const turnEvents = Array.from(yield* Fiber.join(turnEventsFiber));
+      assert.deepStrictEqual(
+        turnEvents.map((event) => event.type),
+        ["turn.started", "turn.completed"],
+      );
+      const completed = turnEvents[1];
+      if (completed?.type === "turn.completed") {
+        assert.equal(completed.payload.state, "failed");
+        assert.equal(completed.payload.errorMessage, error.message);
+      }
+      const [session] = yield* adapter.listSessions();
+      assert.isUndefined(session?.activeTurnId);
+
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
   it.effect("rejects startSession when the provider mismatches", () =>
     Effect.gen(function* () {
       const adapter = yield* makeTestAcpAdapter({ ...process.env });

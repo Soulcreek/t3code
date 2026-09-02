@@ -789,6 +789,7 @@ export function makeAcpAdapter(profile: AcpAdapterProfile, options?: AcpAdapterO
         // resolving from here on does not settle the turn; the matching
         // decrement is the `ensuring` below.
         ctx.promptsInFlight += 1;
+        let turnStartedEmitted = false;
 
         return yield* Effect.gen(function* () {
           const turnModelSelection =
@@ -828,6 +829,7 @@ export function makeAcpAdapter(profile: AcpAdapterProfile, options?: AcpAdapterO
               turnId,
               payload: { model: effectiveModel },
             });
+            turnStartedEmitted = true;
           }
 
           const promptParts: Array<EffectAcpSchema.ContentBlock> = [];
@@ -924,6 +926,25 @@ export function makeAcpAdapter(profile: AcpAdapterProfile, options?: AcpAdapterO
             turnId,
           };
         }).pipe(
+          // A prompt that fails after `turn.started` must still settle the turn
+          // it opened, otherwise the thread keeps a running turn with no end.
+          Effect.tapError((error) =>
+            turnStartedEmitted && ctx.promptsInFlight === 1
+              ? Effect.gen(function* () {
+                  const { activeTurnId: _activeTurnId, ...session } = ctx.session;
+                  ctx.session = { ...session, updatedAt: yield* nowIso };
+                  ctx.activeTurnId = undefined;
+                  yield* offerRuntimeEvent({
+                    type: "turn.completed",
+                    ...(yield* makeEventStamp()),
+                    provider: PROVIDER,
+                    threadId: input.threadId,
+                    turnId,
+                    payload: { state: "failed", errorMessage: error.message },
+                  });
+                })
+              : Effect.void,
+          ),
           Effect.ensuring(
             Effect.sync(() => {
               ctx.promptsInFlight = Math.max(0, ctx.promptsInFlight - 1);
