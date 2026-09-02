@@ -939,6 +939,14 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           installed: false,
           checkedAt: "2026-09-01T00:03:00.000Z",
         } satisfies ServerProvider;
+        const rediscoveredInventory = {
+          ...readyProbe,
+          checkedAt: "2026-09-01T00:04:00.000Z",
+          models: [
+            previousProvider.models[0],
+            { slug: "gpt-5-mini", name: "GPT-5 mini", isCustom: false, capabilities: null },
+          ],
+        } satisfies ServerProvider;
 
         assert.deepStrictEqual(mergeProviderSnapshot(previousProvider, readyProbe).models, [
           ...previousProvider.models,
@@ -949,6 +957,12 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         assert.deepStrictEqual(mergeProviderSnapshot(previousProvider, missingProvider).models, [
           previousProvider.models[0],
         ]);
+        // A session that advertises real models is authoritative: the shrunken
+        // inventory replaces "gpt-5" instead of keeping it alive forever.
+        assert.deepStrictEqual(
+          mergeProviderSnapshot(previousProvider, rediscoveredInventory).models,
+          rediscoveredInventory.models,
+        );
       });
 
       it("fills missing capabilities from the previous provider snapshot", () => {
