@@ -24,6 +24,7 @@ import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { makeUnsupportedTextGeneration } from "../../textGeneration/TextGeneration.ts";
+import { ACP_AUTH_REQUIRED_DETAIL, isAcpAuthRequiredError } from "../acp/AcpAdapterSupport.ts";
 import * as AcpSessionRuntime from "../acp/AcpSessionRuntime.ts";
 import { buildAcpModelCapabilities, extractModelOptions } from "../acp/AcpRuntimeModel.ts";
 import { ProviderDriverError } from "../Errors.ts";
@@ -175,12 +176,10 @@ export const AcpDriver: ProviderDriver<AcpSettings, AcpDriverEnv> = {
           Effect.result,
         );
         if (Result.isFailure(connected)) {
-          const failure = connected.failure;
-          const authRequired = failure._tag === "AcpRequestError" && failure.code === -32000;
           return unavailableSnapshot(
             checkedAt,
-            authRequired
-              ? "Authentication required. Sign in with the configured CLI outside T3 Code, then retry."
+            isAcpAuthRequiredError(connected.failure)
+              ? ACP_AUTH_REQUIRED_DETAIL
               : "The ACP process started, but its initialize handshake failed.",
             true,
           );
