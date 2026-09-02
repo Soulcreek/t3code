@@ -26,7 +26,12 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { makeUnsupportedTextGeneration } from "../../textGeneration/TextGeneration.ts";
 import { ACP_AUTH_REQUIRED_DETAIL, isAcpAuthRequiredError } from "../acp/AcpAdapterSupport.ts";
 import * as AcpSessionRuntime from "../acp/AcpSessionRuntime.ts";
-import { buildAcpModelCapabilities, extractModelOptions } from "../acp/AcpRuntimeModel.ts";
+import {
+  ACP_AGENT_DEFAULT_MODEL_SLUG,
+  buildAcpModelCapabilities,
+  extractModelOptions,
+  isAcpAgentDefaultModel,
+} from "../acp/AcpRuntimeModel.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { type AcpAdapterProfile, makeAcpAdapter } from "../Layers/CursorAdapter.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
@@ -44,7 +49,7 @@ const MAINTENANCE_CAPABILITIES = makeManualOnlyProviderMaintenanceCapabilities({
 const EMPTY_CAPABILITIES = createModelCapabilities({ optionDescriptors: [] });
 const defaultModels = (capabilities: ModelCapabilities = EMPTY_CAPABILITIES) => [
   {
-    slug: "agent-default",
+    slug: ACP_AGENT_DEFAULT_MODEL_SLUG,
     name: "Agent default",
     isCustom: false,
     capabilities,
@@ -188,13 +193,15 @@ export const AcpDriver: ProviderDriver<AcpSettings, AcpDriverEnv> = {
         const agentInfo = connected.success.agentInfo;
         const observedOptions = yield* Ref.get(observedConfigRef);
         const modelCapabilities = buildAcpModelCapabilities(observedOptions);
-        const models = extractModelOptions(observedOptions).map((model) => ({
-          slug: model.id,
-          name: model.name,
-          isCustom: false,
-          ...(model.isDefault ? { isDefault: true } : {}),
-          capabilities: modelCapabilities,
-        }));
+        const models = extractModelOptions(observedOptions)
+          .filter((model) => !isAcpAgentDefaultModel(model.id))
+          .map((model) => ({
+            slug: model.id,
+            name: model.name,
+            isCustom: false,
+            ...(model.isDefault ? { isDefault: true } : {}),
+            capabilities: modelCapabilities,
+          }));
         const discoveredDisplayName = agentInfo?.title?.trim() || agentInfo?.name.trim();
         return makeSnapshot({
           checkedAt,

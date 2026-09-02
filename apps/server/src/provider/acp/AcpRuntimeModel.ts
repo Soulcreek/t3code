@@ -126,6 +126,17 @@ type AcpToolCallUpdate = Extract<
   { readonly sessionUpdate: "tool_call" | "tool_call_update" }
 >;
 
+/**
+ * Slug of the synthetic "Agent default" model a generic ACP provider always lists. Selecting
+ * it leaves the agent's own model choice untouched, so it must never be sent through
+ * `session/set_config_option` and must not collide with an advertised model id.
+ */
+export const ACP_AGENT_DEFAULT_MODEL_SLUG = "__acp_agent_default__";
+
+export function isAcpAgentDefaultModel(model: string): boolean {
+  return model.trim() === ACP_AGENT_DEFAULT_MODEL_SLUG;
+}
+
 export function findModelConfigOption(
   configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption> | null | undefined,
 ): EffectAcpSchema.SessionConfigOption | undefined {
@@ -229,6 +240,24 @@ export function collectSessionConfigOptionValues(
   }
   return configOption.options.flatMap((entry) =>
     "value" in entry ? [entry.value] : entry.options.map((option) => option.value),
+  );
+}
+
+/**
+ * Maps a value picked in T3's UI back to the advertised option value. Snapshots expose trimmed
+ * ids, so the match is by trimmed text while the returned value is what the agent advertised
+ * and therefore what `session/set_config_option` must carry.
+ */
+export function resolveSessionConfigOptionValue(
+  configOption: EffectAcpSchema.SessionConfigOption,
+  requestedValue: string,
+): string | undefined {
+  const normalizedValue = requestedValue.trim();
+  if (!normalizedValue) {
+    return undefined;
+  }
+  return collectSessionConfigOptionValues(configOption).find(
+    (value) => value.trim() === normalizedValue,
   );
 }
 

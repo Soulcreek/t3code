@@ -60,12 +60,14 @@ import {
   makeAcpToolCallEvent,
 } from "../acp/AcpCoreRuntimeEvents.ts";
 import {
+  ACP_AGENT_DEFAULT_MODEL_SLUG,
   type AcpSessionMode,
   type AcpSessionModeState,
-  collectSessionConfigOptionValues,
   findModelConfigOption,
   findSessionConfigOption,
+  isAcpAgentDefaultModel,
   parsePermissionRequest,
+  resolveSessionConfigOptionValue,
 } from "../acp/AcpRuntimeModel.ts";
 import { makeAcpNativeLoggerFactory } from "../acp/AcpNativeLogging.ts";
 import { applyCursorAcpModelSelection, makeCursorAcpRuntime } from "../acp/CursorAcpSupport.ts";
@@ -93,15 +95,18 @@ function encodeJsonStringForDiagnostics(input: unknown): string | undefined {
   return Exit.isSuccess(result) ? result.value : undefined;
 }
 
-export interface CursorAdapterLiveOptions {
+export interface AcpAdapterOptions {
   readonly environment?: NodeJS.ProcessEnv;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
   /**
    * Selections are honored when `modelSelection.instanceId` matches this value.
-   * Defaults to the legacy built-in instance id (`cursor`).
+   * Defaults to the built-in instance id of the profile's driver kind.
    */
   readonly instanceId?: ProviderInstanceId;
+}
+
+export interface CursorAdapterLiveOptions extends AcpAdapterOptions {
   /**
    * Optional per-session settings resolver. When provided the adapter yields
    * this effect at the start of every session and uses the result instead of
@@ -115,8 +120,6 @@ export interface CursorAdapterLiveOptions {
    */
   readonly resolveSettings?: Effect.Effect<CursorSettings>;
 }
-
-export type AcpAdapterOptions = Omit<CursorAdapterLiveOptions, "resolveSettings">;
 
 type AcpAdapterRuntimeFactory = (
   input: Omit<AcpSessionRuntime.AcpSessionRuntimeOptions, "authMethodId" | "spawn"> & {
@@ -305,17 +308,22 @@ function applyRequestedSessionConfiguration<E>(input: {
       });
       appliedModel = input.modelSelection.model;
     } else if (input.modelSelection && input.modelSelectionKind === "standard") {
-      const modelConfig = findModelConfigOption(yield* input.runtime.getConfigOptions);
-      if (
-        modelConfig &&
-        collectSessionConfigOptionValues(modelConfig).includes(input.modelSelection.model)
-      ) {
-        yield* input.runtime
-          .setConfigOption(modelConfig.id, input.modelSelection.model)
-          .pipe(Effect.mapError(mapConfigError));
-        appliedModel = input.modelSelection.model;
-      } else if (input.modelSelection.model === "agent-default") {
-        appliedModel = input.modelSelection.model;
+      const requestedModel = input.modelSelection.model;
+      if (isAcpAgentDefaultModel(requestedModel)) {
+        // The synthetic default keeps whatever model the agent chose; never
+        // forward the sentinel to the agent.
+        appliedModel = ACP_AGENT_DEFAULT_MODEL_SLUG;
+      } else {
+        const modelConfig = findModelConfigOption(yield* input.runtime.getConfigOptions);
+        const advertisedModel = modelConfig
+          ? resolveSessionConfigOptionValue(modelConfig, requestedModel)
+          : undefined;
+        if (modelConfig && advertisedModel !== undefined) {
+          yield* input.runtime
+            .setConfigOption(modelConfig.id, advertisedModel)
+            .pipe(Effect.mapError(mapConfigError));
+          appliedModel = requestedModel;
+        }
       }
 
       for (const selection of input.modelSelection.options ?? []) {
@@ -330,8 +338,14 @@ function applyRequestedSessionConfiguration<E>(input: {
         ) {
           continue;
         }
+        // Unknown choices intentionally pass through so the runtime's option
+        // validation reports them instead of silently dropping the selection.
+        const value =
+          typeof selection.value === "string" && configOption.type === "select"
+            ? (resolveSessionConfigOptionValue(configOption, selection.value) ?? selection.value)
+            : selection.value;
         yield* input.runtime
-          .setConfigOption(configOption.id, selection.value)
+          .setConfigOption(configOption.id, value)
           .pipe(Effect.mapError(mapConfigError));
       }
     }
@@ -1238,7 +1252,9 @@ export function makeAcpAdapter(profile: AcpAdapterProfile, options?: AcpAdapterO
     return {
       provider: PROVIDER,
       capabilities: {
-        sessionModelSwitch: hasCursorExtensions ? "in-session" : "unsupported",
+        // Both selection kinds apply the model through `session/set_config_option`
+        // on the live session, so a model change never needs a restart.
+        sessionModelSwitch: acceptsModelSelection ? "in-session" : "unsupported",
       },
       startSession,
       sendTurn,
