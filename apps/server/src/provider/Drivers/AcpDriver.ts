@@ -33,7 +33,7 @@ import {
   isAcpAgentDefaultModel,
 } from "../acp/AcpRuntimeModel.ts";
 import { ProviderDriverError } from "../Errors.ts";
-import { type AcpAdapterProfile, makeAcpAdapter } from "../Layers/CursorAdapter.ts";
+import { type AcpAdapterProfile, makeAcpAdapter } from "../Layers/AcpAdapter.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
 import { defaultProviderContinuationIdentity, type ProviderDriver } from "../ProviderDriver.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
@@ -97,6 +97,8 @@ export const AcpDriver: ProviderDriver<AcpSettings, AcpDriverEnv> = {
       }) =>
         AcpSessionRuntime.make({
           ...input,
+          respectAgentCapabilities: true,
+          reasoningStream: true,
           spawn: {
             command: config.binaryPath,
             args: tokenizeCliArgs(config.launchArgs),
@@ -256,7 +258,6 @@ export const AcpDriver: ProviderDriver<AcpSettings, AcpDriverEnv> = {
         {
           provider: DRIVER_KIND,
           displayName: agentName,
-          modelSelection: "standard",
           onConfigOptionsChanged,
           makeRuntime,
         },
